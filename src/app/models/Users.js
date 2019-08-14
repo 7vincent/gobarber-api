@@ -1,7 +1,7 @@
 import Sequelize, { Model } from 'sequelize';
 import bcrypt from 'bcryptjs';
 
-class User extends Model {
+class Users extends Model {
   // metodo chamado automaticamente pelo sequelize
   static init(sequelize) {
     // vou enviar via super apenas colunas que vou preencher, não id
@@ -27,9 +27,13 @@ class User extends Model {
     return this;
   }
 
+  static associate(models) {
+    this.belongsTo(models.Files, { foreignKey: 'avatar_id', as: 'avatar' });
+  }
+
   checkPassword(password) {
     return bcrypt.compare(password, this.password_hash);
   }
 }
 
-export default User;
+export default Users;
