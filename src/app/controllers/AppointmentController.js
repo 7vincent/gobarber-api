@@ -1,10 +1,10 @@
 import * as Yup from 'yup';
-import { startOfHour, parseISO, isBefore } from 'date-fns';
+import { startOfHour, parseISO, isBefore, format, subHours } from 'date-fns';
+import pt from 'date-fns/locale/pt';
 import Appointment from '../models/Appointment';
 import user from '../models/Users';
 import file from '../models/Files';
-import UserController from './UserController';
-// import UserController from './UserController';
+import notification from '../schemas/Notification';
 
 class AppointmentController {
   async index(req, res) {
@@ -58,7 +58,7 @@ class AppointmentController {
     }
 
     /**
-     * Checando se data é inderior a data atual e se já tem agendamento para mesma hora.
+     * Checando se data é anterior a data atual e se já tem agendamento para mesma hora.
      */
     // parseISO tranforma em obj js e startOfHour zera min e seg da hora, isso e para
     // garantir que dentro de uma mesma hora só uma pessoa seja atendida.
@@ -92,7 +92,50 @@ class AppointmentController {
       date,
     });
 
+    /**
+     * Notificar prestador de serviço
+     */
+    const userNotificado = await user.findByPk(req.userId);
+    const formattedDate = format(
+      hourStart,
+      "'dia' dd 'de' MMMM', às'  H:mm'h'",
+      { locale: pt }
+    );
+
+    await notification.create({
+      content: `Novo agendamento de ${userNotificado.name} para ${formattedDate}`,
+      user: provider_id,
+    });
+
     return res.json({ appointment });
+  }
+
+  async delete(req, res) {
+    /**
+     * Verificar se o agendamento que vai ser cancelado é o user logado
+     */
+    const appointment = await Appointment.findByPk(req.params.id);
+    if (appointment.user_id !== req.userId) {
+      return res.status(401).json({
+        error: 'Você não tem permissão para cancelar esse agendamento.',
+      });
+    }
+
+    /**
+     * Verificando agora se o momento o cancelamento é pelo menos 2h antes do agendamento
+     */
+    // tenho exatamente 2h antes do agendado
+    const dateWithSub = subHours(appointment.date, 2);
+
+    if (isBefore(dateWithSub, new Date())) {
+      return res.status(401).json({
+        error: 'Você só pode cancelar esse agendamento com 2h de antecedência.',
+      });
+    }
+    appointment.canceled_at = new Date();
+    await appointment.save();
+
+    return res.json(appointment);
   }
 }
 
