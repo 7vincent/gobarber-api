@@ -2,9 +2,10 @@ import * as Yup from 'yup';
 import { startOfHour, parseISO, isBefore, format, subHours } from 'date-fns';
 import pt from 'date-fns/locale/pt';
 import Appointment from '../models/Appointment';
-import user from '../models/Users';
 import file from '../models/Files';
 import notification from '../schemas/Notification';
+import Mail from '../../lib/Mail';
+import Users from '../models/Users';
 
 class AppointmentController {
   async index(req, res) {
@@ -18,7 +19,7 @@ class AppointmentController {
       offset: (page - 1) * 5, // vai pegar a pagina e pular os registro das paginas anteriores
       include: [
         {
-          model: user,
+          model: Users,
           as: 'provider',
           attributes: ['id', 'name'],
           include: [
@@ -47,7 +48,7 @@ class AppointmentController {
     const { provider_id, date } = req.body;
 
     // checando se quem chega é provedor de serviço.
-    const isProvider = await user.findOne({
+    const isProvider = await Users.findOne({
       where: { id: provider_id, provider: true },
     });
 
@@ -95,7 +96,7 @@ class AppointmentController {
     /**
      * Notificar prestador de serviço
      */
-    const userNotificado = await user.findByPk(req.userId);
+    const userNotificado = await Users.findByPk(req.userId);
     const formattedDate = format(
       hourStart,
       "'dia' dd 'de' MMMM', às'  H:mm'h'",
@@ -114,7 +115,15 @@ class AppointmentController {
     /**
      * Verificar se o agendamento que vai ser cancelado é o user logado
      */
-    const appointment = await Appointment.findByPk(req.params.id);
+    const appointment = await Appointment.findByPk(req.params.id, {
+      include: [
+        {
+          model: Users,
+          as: 'provider',
+          attributes: ['name', 'email'],
+        },
+      ],
+    });
     if (appointment.user_id !== req.userId) {
       return res.status(401).json({
         error: 'Você não tem permissão para cancelar esse agendamento.',
@@ -134,6 +143,13 @@ class AppointmentController {
     }
     appointment.canceled_at = new Date();
     await appointment.save();
+
+    // Enviando email para notificar o provider sobre o cancelamento
+    await Mail.sendMail({
+      to: `${appointment.provider.name} <${appointment.provider.email}>`,
+      subject: 'Agendamento cancelado',
+      text: 'Você tem um novo cancelamento.',
+    });
 
     return res.json(appointment);
   }
