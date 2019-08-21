@@ -4,8 +4,9 @@ import pt from 'date-fns/locale/pt';
 import Appointment from '../models/Appointment';
 import file from '../models/Files';
 import notification from '../schemas/Notification';
-import Mail from '../../lib/Mail';
+import Queue from '../../lib/Queue';
 import Users from '../models/Users';
+import CancellationMail from '../jobs/CancellationMail';
 
 class AppointmentController {
   async index(req, res) {
@@ -14,7 +15,7 @@ class AppointmentController {
     const appointments = await Appointment.findAll({
       where: { user_id: req.userId, canceled_at: null },
       order: ['date'],
-      attributes: ['id', 'date'],
+      attributes: ['id', 'date', 'past', 'cancelable'],
       limit: 5,
       offset: (page - 1) * 5, // vai pegar a pagina e pular os registro das paginas anteriores
       include: [
@@ -122,6 +123,11 @@ class AppointmentController {
           as: 'provider',
           attributes: ['name', 'email'],
         },
+        {
+          model: Users,
+          as: 'user',
+          attributes: ['name'],
+        },
       ],
     });
     if (appointment.user_id !== req.userId) {
@@ -144,12 +150,26 @@ class AppointmentController {
     appointment.canceled_at = new Date();
     await appointment.save();
 
-    // Enviando email para notificar o provider sobre o cancelamento
+    // chamando jobs responsavel pelo envio de email
+    await Queue.add(CancellationMail.key, {
+      appointment,
+    });
+
+    /* Enviando email para notificar o provider sobre o cancelamento
+    //código enviar para o /jobs/cancellationMail()
     await Mail.sendMail({
       to: `${appointment.provider.name} <${appointment.provider.email}>`,
       subject: 'Agendamento cancelado',
-      text: 'Você tem um novo cancelamento.',
+      template: 'cancellation',
+      context: {
+        provider: appointment.provider.name,
+        user: appointment.user.name,
+        date: format(appointment.date, "'dia' dd 'de' MMMM', às'  H:mm'h'", {
+          locale: pt,
+        }),
+      },
     });
+    */
 
     return res.json(appointment);
   }
