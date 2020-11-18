@@ -1,6 +1,8 @@
 import jwt from 'jsonwebtoken';
 import * as Yup from 'yup';
 import User from '../models/Users';
+import Files from '../models/Files';
+
 import authConfig from '../../config/auth';
 
 class SessionController {
@@ -16,7 +18,16 @@ class SessionController {
     const { email, password } = req.body;
 
     // ver se email existe no banco
-    const user = await User.findOne({ where: { email } });
+    const user = await User.findOne({
+      where: { email },
+      include: [
+        {
+          model: Files,
+          as: 'avatar',
+          attributes: ['id', 'path', 'url'],
+        },
+      ],
+    });
 
     // se user não existir, não tem user cadastrado com o email digitado
     if (!user) {
@@ -27,12 +38,14 @@ class SessionController {
       return res.status(401).json({ error: 'Password does not match' });
     }
 
-    const { id, name } = user;
+    const { id, name, avatar, provider } = user;
     return res.json({
       user: {
         id,
         name,
         email,
+        avatar,
+        provider,
       },
       token: jwt.sign({ id }, authConfig.secret, {
         expiresIn: authConfig.expiresId,
